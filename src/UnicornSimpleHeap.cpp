@@ -44,6 +44,38 @@ uint32_t UnicornSimpleHeap::calloc(uint32_t size, uint32_t count){
     return UnicornSimpleHeap::malloc(size * count);
 }
 
+uint32_t UnicornSimpleHeap::realloc(uint32_t addr, uint32_t size){
+    DEBUG("Reallocating chunk @ 0x%x to be 0x%x bytes", addr, size);
+    
+    std::vector<HeapChunk>::iterator chunk_itr = std::find_if(chunks.begin(), chunks.end(), \
+                                                   std::bind(Compare_Chunk, std::placeholders::_1, CHUNK(addr)));
+    
+    // Something went wrong. (memory corruption?)
+    if(chunk_itr == chunks.end())
+        return 0;
+    
+    if(size == 0)
+        return UnicornSimpleHeap::free(addr);
+    
+    // Read original data.
+    void* ori_data = std::malloc(CHUNK_DATA_SIZE(addr, chunk_itr->size));
+    uc_err err = uc_mem_read(this->uc, addr, ori_data, CHUNK_DATA_SIZE(addr, chunk_itr->size));
+    uc_assert_success(err);
+    
+    // Wirte the data to new chunk.
+    uint32_t new_chunk = UnicornSimpleHeap::malloc(size);
+    err = uc_mem_write(this->uc, static_cast<uint64_t>(new_chunk), ori_data, \
+                              CHUNK_DATA_SIZE(addr, chunk_itr->size));
+    uc_assert_success(err);
+    
+    // Free old chunk
+    std::free(ori_data);
+    if(UnicornSimpleHeap::free(addr))
+        return 0;
+    
+    return new_chunk;
+}
+
 uint32_t UnicornSimpleHeap::free(uint32_t addr){
     std::vector<HeapChunk>::iterator chunk_itr = std::find_if(chunks.begin(), chunks.end(), \
                                                    std::bind(Compare_Chunk, std::placeholders::_1, CHUNK(addr)));
